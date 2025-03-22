@@ -1,0 +1,255 @@
+#define WIN32_LEAN_AND_MEAN // Предотвращает включение winsock.h через windows.h
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <thread>
+#include <chrono>
+#include <ctime>
+#include <cstring>
+
+#ifdef _WIN32
+#include <winsock2.h> // Подключаем winsock2.h до windows.h
+#include <ws2tcpip.h> // Для inet_pton и inet_ntop
+#include <windows.h>  // Для работы с кодировкой консоли
+#pragma comment(lib, "Ws2_32.lib")
+#define socklen_t int
+#else
+// Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+/*
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+*/
+#endif
+
+using namespace std;
+
+// Функции для преобразования между CP1251 (консоль Windows) и UTF-8 (передача по сети)
+string cp1251_to_utf8(const string& cp1251_str) {
+    int len = MultiByteToWideChar(1251, 0, cp1251_str.c_str(), -1, nullptr, 0);
+    vector<wchar_t> wide(len);
+    MultiByteToWideChar(1251, 0, cp1251_str.c_str(), -1, wide.data(), len);
+
+    int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wide.data(), -1, nullptr, 0, nullptr, nullptr);
+    vector<char> utf8(utf8_len);
+    WideCharToMultiByte(CP_UTF8, 0, wide.data(), -1, utf8.data(), utf8_len, nullptr, nullptr);
+
+    return string(utf8.data());
+}
+
+string utf8_to_cp1251(const string& utf8_str) {
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, nullptr, 0);
+    vector<wchar_t> wide(len);
+    MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, wide.data(), len);
+
+    int cp1251_len = WideCharToMultiByte(1251, 0, wide.data(), -1, nullptr, 0, nullptr, nullptr);
+    vector<char> cp1251(cp1251_len);
+    WideCharToMultiByte(1251, 0, wide.data(), -1, cp1251.data(), cp1251_len, nullptr, nullptr);
+
+    return string(cp1251.data());
+}
+
+struct Client {
+    string nickname;
+    int color;
+
+    // Добавляем конструктор для инициализации color
+    Client() : color(7) {} // По умолчанию белый цвет (7)
+    Client(string nick, int c) : nickname(nick), color(c) {}
+};
+
+vector<string> chat_history;
+map<string, Client> clients; // ключ: "ip:port"
+
+string get_timestamp() {
+    time_t now = time(nullptr);
+#ifdef _WIN32
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &now);
+    char buf[80];
+    strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+#else
+    // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+    /*
+    char buf[80];
+    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&now));
+    */
+#endif
+    return string(buf);
+}
+
+void broadcast(int sock, const string& message, const sockaddr_in* exclude_addr = nullptr) {
+    for (const auto& client_pair : clients) {
+        const string& addr_str = client_pair.first;
+        const Client& client = client_pair.second;
+
+        sockaddr_in client_addr;
+        memset(&client_addr, 0, sizeof(client_addr));
+        client_addr.sin_family = AF_INET;
+        string ip = addr_str.substr(0, addr_str.find(':'));
+        string port_str = addr_str.substr(addr_str.find(':') + 1);
+        int port = stoi(port_str);
+#ifdef _WIN32
+        inet_pton(AF_INET, ip.c_str(), &client_addr.sin_addr);
+#else
+        // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+        /*
+        client_addr.sin_addr.s_addr = inet_addr(ip.c_str());
+        */
+#endif
+        client_addr.sin_port = htons(static_cast<unsigned short>(port));
+
+        if (!exclude_addr || memcmp(&client_addr, exclude_addr, sizeof(sockaddr_in)) != 0) {
+            string utf8_message = cp1251_to_utf8(message); // Преобразуем в UTF-8 для передачи
+            cout << "[Сервер] Отправляем клиенту " << addr_str << " (UTF-8): " << utf8_message << endl;
+            int sent_bytes = sendto(sock, utf8_message.c_str(), utf8_message.length(), 0, (sockaddr*)&client_addr, sizeof(client_addr));
+            if (sent_bytes < 0) {
+                cerr << "[Сервер] Ошибка отправки сообщения клиенту " << addr_str << ": " << WSAGetLastError() << endl;
+            }
+            else {
+                cout << "[Сервер] Отправлено " << sent_bytes << " байт клиенту " << addr_str << ": " << message << endl;
+            }
+        }
+    }
+}
+
+void handle_clients(int sock) {
+    char buffer[1024];
+    sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    while (true) {
+        int bytes_received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (sockaddr*)&client_addr, &addr_len);
+        if (bytes_received < 0) {
+            cerr << "Ошибка получения данных: " << WSAGetLastError() << endl;
+            continue;
+        }
+
+        buffer[bytes_received] = '\0';
+        char ip_str[INET_ADDRSTRLEN];
+#ifdef _WIN32
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, INET_ADDRSTRLEN);
+#else
+        // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+        /*
+        inet_ntoa(client_addr.sin_addr);
+        */
+#endif
+        string client_key = string(ip_str) + ":" + to_string(ntohs(client_addr.sin_port));
+
+        cout << "[Сервер] Получено " << bytes_received << " байт от " << client_key << ": " << buffer << endl; // Отладка
+
+        string message = utf8_to_cp1251(string(buffer)); // Преобразуем из UTF-8 в CP1251 для отображения
+
+        if (clients.find(client_key) == clients.end()) {
+            // Новый клиент: "ник:цвет"
+            size_t colon_pos = message.find(':');
+            string nickname = message.substr(0, colon_pos);
+            int color = stoi(message.substr(colon_pos + 1));
+            if (color < 1 || color > 15) color = 7; // По умолчанию белый
+            clients[client_key] = Client(nickname, color);
+
+            string join_msg = "[Сервер] " + nickname + " вошел в чат";
+            chat_history.push_back(join_msg);
+            cout << join_msg << endl;
+            broadcast(sock, join_msg, &client_addr);
+
+            // Отправка истории новому клиенту
+            cout << "[Сервер] Отправка истории чата новому клиенту " << client_key << "..." << endl;
+            for (const auto& msg : chat_history) {
+                string utf8_msg = cp1251_to_utf8(msg);
+                cout << "[Сервер] Отправляем историю клиенту " << client_key << " (UTF-8): " << utf8_msg << endl;
+                int sent_bytes = sendto(sock, utf8_msg.c_str(), utf8_msg.length(), 0, (sockaddr*)&client_addr, sizeof(client_addr));
+                if (sent_bytes < 0) {
+                    cerr << "[Сервер] Ошибка отправки истории клиенту " << client_key << ": " << WSAGetLastError() << endl;
+                }
+                else {
+                    cout << "[Сервер] Отправлено " << sent_bytes << " байт истории клиенту " << client_key << ": " << msg << endl;
+                }
+            }
+        }
+        else {
+            // Сообщение от клиента
+            string nickname = clients[client_key].nickname;
+            if (message == "EXIT") {
+                string exit_msg = "[Сервер] " + nickname + " вышел из чата (KDG)";
+                chat_history.push_back(exit_msg);
+                cout << exit_msg << endl;
+                broadcast(sock, exit_msg);
+                clients.erase(client_key);
+            }
+            else {
+                string formatted_msg = "[" + get_timestamp() + "] " + nickname + ": " + message;
+                chat_history.push_back(formatted_msg);
+                cout << formatted_msg << endl;
+                broadcast(sock, formatted_msg, &client_addr);
+            }
+        }
+    }
+}
+
+int main() {
+#ifdef _WIN32
+    // Устанавливаем кодировку консоли на CP1251 для корректного отображения русских символов
+    SetConsoleOutputCP(1251);
+    SetConsoleCP(1251);
+    setlocale(LC_ALL, "Russian");
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "Ошибка инициализации Winsock" << endl;
+        return 1;
+    }
+#else
+    // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+    /*
+    setlocale(LC_ALL, "ru_RU.UTF-8");
+    */
+#endif
+
+#ifdef _WIN32
+    SOCKET server_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (server_sock == INVALID_SOCKET) {
+        cerr << "Ошибка создания сокета" << endl;
+        return 1;
+    }
+#else
+    // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+    /*
+    int server_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (server_sock < 0) {
+        cerr << "Ошибка создания сокета" << endl;
+        return 1;
+    }
+    */
+#endif
+
+    sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(12345);
+
+    if (bind(server_sock, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        cerr << "Ошибка привязки сокета" << endl;
+        return 1;
+    }
+
+    cout << "Сервер запущен на порту 12345..." << endl;
+    cout << "Сервер готов к работе и ожидает подключение клиентов :)" << endl;
+
+    handle_clients(server_sock);
+
+#ifdef _WIN32
+    closesocket(server_sock);
+    WSACleanup();
+#else
+    // Если вы хотите включить поддержку macOS или Linux, раскомментируйте следующие строки:
+    /*
+    close(server_sock);
+    */
+#endif
+    return 0;
+}
