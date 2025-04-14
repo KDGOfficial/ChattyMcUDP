@@ -1,0 +1,35 @@
+﻿  client.cpp
+E:\client\client\client.cpp(137,58): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+E:\client\client\client.cpp(147,66): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+E:\client\client\client.cpp(151,87): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\type_traits(1706,67): warning C4244: аргумент: преобразование "unsigned __int64" в "int", возможна потеря данных
+  (компиляция исходного файла "client.cpp")
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\type_traits(1706,67):
+      контекст создания экземпляра шаблона (сначала самый старый)
+          E:\client\client\client.cpp(139,20):
+          выполняется компиляция ссылки на экземпляр шаблон функции "std::thread::thread<void(__cdecl &)(int,int),SOCKET&,int&,0>(_Fn,SOCKET &,int &)"
+          with
+          [
+              _Fn=void (__cdecl &)(int,int)
+          ]
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\thread(93,9):
+          выполняется компиляция ссылки на экземпляр шаблон функции "void std::thread::_Start<void(__cdecl &)(int,int),SOCKET&,int&>(_Fn,SOCKET &,int &)"
+          with
+          [
+              _Fn=void (__cdecl &)(int,int)
+          ]
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\thread(76,40):
+          выполняется компиляция ссылки на экземпляр шаблон функции "unsigned int (__cdecl *std::thread::_Get_invoke<std::thread::_Start::_Tuple,0,1,2>(std::integer_sequence<size_t,0,1,2>) noexcept)(void *)"
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\thread(67,17):
+          выполняется компиляция ссылки на экземпляр шаблон функции "unsigned int std::thread::_Invoke<std::thread::_Start::_Tuple,0,1,2>(void *) noexcept"
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\thread(60,14):
+          выполняется компиляция ссылки на экземпляр шаблон функции "void std::invoke<void(__cdecl *)(int,int),unsigned __int64,int>(_Callable &&,_Ty1 &&,int &&) noexcept(false)"
+          with
+          [
+              _Callable=void (__cdecl *)(int,int),
+              _Ty1=unsigned __int64
+          ]
+  
+  client.vcxproj -> E:\client\x64\Debug\client.exe
+  "pwsh.exe" не является внутренней или внешней
+  командой, исполняемой программой или пакетным файлом.
