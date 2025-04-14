@@ -1,0 +1,7 @@
+﻿  server.cpp
+E:\server\server\server.cpp(88,67): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+E:\server\server\server.cpp(97,59): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+E:\server\server\server.cpp(183,20): warning C4244: аргумент: преобразование "SOCKET" в "int", возможна потеря данных
+  server.vcxproj -> E:\server\x64\Debug\server.exe
+  "pwsh.exe" не является внутренней или внешней
+  командой, исполняемой программой или пакетным файлом.
